@@ -1,9 +1,7 @@
 const db = require("../db/connection");
 
-// -----------------------------------------------
 // POST /api/register
-// Handles all 3 sections of the registration form
-// -----------------------------------------------
+// Handles all the 3 sections of the registration form
 const registerUser = async (req, res) => {
   const { fullname, email, password, income_streams, expense_categories } = req.body;
 
