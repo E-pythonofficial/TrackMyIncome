@@ -1,11 +1,10 @@
 const db = require("../db/connection");
+const bcrypt = require("bcrypt");
 
 // POST /api/register
-// Handles all the 3 sections of the registration form
 const registerUser = async (req, res) => {
   const { fullname, email, password, income_streams, expense_categories } = req.body;
 
-  // Basic validation
   if (!fullname || !email || !password) {
     return res.status(400).json({ error: "Fullname, email and password are required." });
   }
@@ -15,24 +14,23 @@ const registerUser = async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // 1. Check if email already exists
     const [existing] = await conn.query(
-      "SELECT id FROM users WHERE email = ?",
-      [email]
+      "SELECT id FROM users WHERE email = ?", [email]
     );
     if (existing.length > 0) {
       await conn.rollback();
       return res.status(409).json({ error: "Email already registered." });
     }
 
-    // 2. Insert user (Section 1)
+    // Hash password before storing
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const [userResult] = await conn.query(
       "INSERT INTO users (fullname, email, password) VALUES (?, ?, ?)",
-      [fullname, email, password]
+      [fullname, email, hashedPassword]
     );
     const userId = userResult.insertId;
 
-    // 3. Insert income streams (Section 2)
     if (income_streams && income_streams.length > 0) {
       for (const stream of income_streams) {
         await conn.query(
@@ -51,7 +49,6 @@ const registerUser = async (req, res) => {
       }
     }
 
-    // 4. Insert expense categories (Section 3)
     if (expense_categories && expense_categories.length > 0) {
       for (const category of expense_categories) {
         await conn.query(
@@ -89,14 +86,12 @@ const registerUser = async (req, res) => {
 };
 
 // GET /api/users/:id
-// Get a single user's profile
 const getUserById = async (req, res) => {
   const { id } = req.params;
 
   try {
     const [users] = await db.query(
-      "SELECT id, fullname, email, created_at FROM users WHERE id = ?",
-      [id]
+      "SELECT id, fullname, email, created_at FROM users WHERE id = ?", [id]
     );
 
     if (users.length === 0) {
@@ -104,12 +99,10 @@ const getUserById = async (req, res) => {
     }
 
     const [incomeStreams] = await db.query(
-      "SELECT * FROM income_streams WHERE user_id = ?",
-      [id]
+      "SELECT * FROM income_streams WHERE user_id = ?", [id]
     );
     const [expenseCategories] = await db.query(
-      "SELECT * FROM expense_categories WHERE user_id = ?",
-      [id]
+      "SELECT * FROM expense_categories WHERE user_id = ?", [id]
     );
 
     return res.json({
@@ -124,4 +117,42 @@ const getUserById = async (req, res) => {
   }
 };
 
-module.exports = { registerUser, getUserById };
+// POST /api/login
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+
+  try {
+    const [users] = await db.query(
+      "SELECT * FROM users WHERE email = ?", [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    const user = users[0];
+
+    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (!passwordMatch) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    return res.status(200).json({
+      message: "Login successful!",
+      user_id: user.id,
+      user: { id: user.id, fullname: user.fullname, email: user.email }
+    });
+
+  } catch (err) {
+    console.error("Login error:", err.message);
+    return res.status(500).json({ error: "Login failed. Try again." });
+  }
+};
+
+// Add loginUser to your exports at the bottom
+module.exports = { registerUser, getUserById, loginUser };
+
